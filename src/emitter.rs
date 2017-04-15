@@ -113,48 +113,6 @@ impl<'a> YamlEmitter<'a> {
         Ok(())
     }
 
-    fn emit_node_compact(&mut self, node: &Yaml) -> EmitResult {
-        match *node {
-            Yaml::Array(ref v) => {
-                    try!(write!(self.writer, "["));
-                    if self.level >= 0 {
-                        try!(write!(self.writer, "+ "));
-                    }
-                    self.level += 1;
-                    for (cnt, x) in v.iter().enumerate() {
-                        try!(self.write_indent());
-                        if cnt > 0 { try!(write!(self.writer, ", ")); }
-                        try!(self.emit_node(x));
-                    }
-                    self.level -= 1;
-                    try!(write!(self.writer, "]"));
-                    Ok(())
-            },
-            Yaml::Hash(ref h) => {
-                    try!(self.writer.write_str("{"));
-                    self.level += 1;
-                    for (cnt, (k, v)) in h.iter().enumerate() {
-                        if cnt > 0 {
-                            try!(write!(self.writer, ", "));
-                        }
-                        match *k {
-                            // complex key is not supported
-                            Yaml::Array(_) | Yaml::Hash(_) => {
-                                return Err(EmitError::BadHashmapKey);
-                            },
-                            _ => { try!(self.emit_node(k)); }
-                        }
-                        try!(write!(self.writer, ": "));
-                        try!(self.emit_node(v));
-                    }
-                    try!(self.writer.write_str("}"));
-                    self.level -= 1;
-                    Ok(())
-            },
-            _ => self.emit_node(node)
-        }
-    }
-
     fn emit_node(&mut self, node: &Yaml) -> EmitResult {
         match *node {
             Yaml::Array(ref v) => {
@@ -188,19 +146,30 @@ impl<'a> YamlEmitter<'a> {
                     }
                     self.level += 1;
                     for (cnt, (k, v)) in h.iter().enumerate() {
+                        let complex_key = match *k {
+                          Yaml::Hash(_) | Yaml::Array(_) => true,
+                          _ => false,
+                        };
                         if cnt > 0 {
                             try!(write!(self.writer, "\n"));
                         }
                         try!(self.write_indent());
-                        match *k {
-                            Yaml::Array(_) | Yaml::Hash(_) => {
-                                try!(self.emit_node_compact(k));
-                                //return Err(EmitError::BadHashmapKey);
-                            },
-                            _ => { try!(self.emit_node(k)); }
+                        if complex_key {
+                          try!(write!(self.writer, "? "));
+                          self.level += 1;
+                          try!(self.emit_node(k));
+                          self.level -= 1;
+                          try!(write!(self.writer, "\n"));
+                          try!(self.write_indent());
+                          try!(write!(self.writer, ": "));
+                          self.level += 1;
+                          try!(self.emit_node(v));
+                          self.level -= 1;
+                        } else {
+                          try!(self.emit_node(k));
+                          try!(write!(self.writer, ": "));
+                          try!(self.emit_node(v));
                         }
-                        try!(write!(self.writer, ": "));
-                        try!(self.emit_node(v));
                     }
                     self.level -= 1;
                     Ok(())
